@@ -28,7 +28,7 @@ class Yolov8Node(Node) :
         self._class_to_color = {}
 
         # parameter default setting
-        self.declare_parameter('weight', 'yolov8n.pt')
+        self.declare_parameter('weight', 'weights/best_2.pt')
         self.declare_parameter('device', 'cuda:0')
         self.declare_parameter('conf_threshold', '0.5')
         self.declare_parameter('iou_threshold', '0.7')
