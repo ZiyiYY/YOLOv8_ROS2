@@ -16,7 +16,7 @@ def generate_launch_description() :
     return LaunchDescription([
         DeclareLaunchArgument(
             'weight',
-            default_value='/home/amov/ros2_ws/best.pt',
+            default_value='/home/amov/YOLOv8_ROS2/src/yolov8-ros2/weights/best_2.pt',
             description='weight model path or name'
         ),
         DeclareLaunchArgument(
@@ -65,7 +65,7 @@ def generate_launch_description() :
         ),
         # Node(
         #     package='yolov8_main',  
-        #     executable='measurement_test_node',  
+        #     executable='detection_subscriber',  
         #     name='measurement_test_node',
         #     parameters=[
         #     ],
