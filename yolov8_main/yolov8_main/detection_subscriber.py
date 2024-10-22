@@ -1,13 +1,24 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile
+from rclpy.qos import QoSHistoryPolicy
+from rclpy.qos import QoSDurabilityPolicy
+from rclpy.qos import QoSReliabilityPolicy
 import os
 import time
 import copy
 import numpy as np
 import threading
+from sensor_msgs.msg import CameraInfo
 from yolov8_msg.msg import Yolov8InferenceMsg
+from geometry_msgs.msg import PoseStamped
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+
+STD_SHAPE = (3,)
+
+def CHECK(vec: np.ndarray):
+    assert vec.shape == STD_SHAPE, f'Shape should be {STD_SHAPE} but here is {vec.shape}'
 
 def camera2bodyFRDrotationMatrix(cameraPitchRad):
     # camera lower than body, then cameraPitch is positive
@@ -63,52 +74,105 @@ def ned2enu(vec):
     ])
     return T @ vec
 
+def yawRadNED2ENU(yawRadNED):
+    return (np.pi / 2 - yawRadNED) % (2 * np.pi)
+
+def yawRadENU2NED(yawRadENU):
+    return yawRadNED2ENU(yawRadENU)
+
+def rpyENU2NED(rpyRadENU):
+    return np.array([rpyRadENU[0], -rpyRadENU[1], yawRadENU2NED(rpyRadENU[2])])
+
 class MeasurementTestNode(Node):
     def __init__(self):
         super().__init__('measurement_test_node')
         self.startTime = time.time()
-        self.cameraSub = self.create_subscription(Yolov8InferenceMsg, '/yolov8_inference', self.camera_callback, 10)
-        # self.targetPositionSub = self.create_subscription(, '/Target/pose', self.targetPosition_callback, 10)
-        # self.uavPositionSub = self.create_subscription(, '/UAV/pose', self.uavPosition_callback, 10)
+
         self.targetPosition = np.array([0, 0, 0])
         self.uavPosition = np.array([0, 0, 0])
         self.losTruth = np.array([0.0, 0.0])
         self.lookAngleFRD = None
         self.losMeasureENU = None
-        self.cameraPitchRAD = None
+        self.cameraPitchRAD = np.deg2rad(30.0)
         self.imageSizePixelXY= None
         self.targetCenterPixelXY = None
         self.targetSizePixelXY = None
         self.data = []
         self.cameraFOV = [np.deg2rad(69.0), np.deg2rad(42.0)]
 
+        self.image_qos_profile = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            durability=QoSDurabilityPolicy.VOLATILE,
+            depth=1
+        )
+
+
+        self.cameraSub = self.create_subscription(CameraInfo, '/color/camera_info', self.cameraCallback, self.image_qos_profile)
+        self.imageSub = self.create_subscription(Yolov8InferenceMsg, '/yolov8_inference', self.detectionCallback, self.image_qos_profile)
+        # self.targetPositionSub = self.create_subscription(PoseStamped, '/vrpn_client_node/balloon/pose', self.targetPositionCallback, self.image_qos_profile)
+        # self.uavPositionSub = self.create_subscription(PoseStamped, '/vrpn_client_node/p230_1/pose', self.uavPositionCallback, self.image_qos_profile)
+
         self.fig, self.ax = plt.subplots(2, 1, figsize=(8, 10))
         # self.losTruth_lines = [self.ax[0].plot([], [], label='Real elevation angle')[0], self.ax[1].plot([], [], label='Real azimuth angle')[0]]
         # self.losMeasure_lines = [self.ax[0].plot([], [], label='Measurement of elevation angle')[0], self.ax[1].plot([], [], label='Measurement of azimuth angle')[0]]
+        # self.losError_lines = [self.ax[0].plot([], [], label='elevation LOS angle error')[0], self.ax[1].plot([], [], label='azimuth los angle error')[0]]
         self.lookAngle_lines = [self.ax[0].plot([], [], label='elevation look angle')[0], self.ax[1].plot([], [], label='azimuth look angle')[0]]
-
+        
         for num, direction in enumerate(['elevation angle', 'azimuth angle']):
-            # self.ax[num].set_xlim(0, 20)
-            self.ax[num].set_ylim(-90, 90) 
+            self.ax[num].set_ylim(-15, 15) 
             self.ax[num].set_xlabel('Time (s)')
             self.ax[num].set_ylabel('Angle (deg)')
             self.ax[num].legend(loc='upper right')
         self.ani = FuncAnimation(self.fig, self.update_plot, interval=100, save_count=100)
         
 
-    def camera_callback(self, msg):
-        self.imageSizePixelXY = np.array([msg.yolov8_inference[0].img_size.x, msg.yolov8_inference[0].img_size.y])
-        self.targetCenterPixelXY = np.array([msg.yolov8_inference[0].bbox.center.x, msg.yolov8_inference[0].bbox.center.y])
-        self.targetSizePixelXY = np.array([msg.yolov8_inference[0].bbox.size.x, msg.yolov8_inference[0].bbox.size.y])
+    def cameraCallback(self, msg):
+        self.imageSizePixelXY = np.array([msg.width, msg.height])
+
+    def detectionCallback(self, msg):
+        box = []
+        score = []
+        class_id = []
+        
+        if not msg.yolov8_inference:
+            return
+        
+        for detection in msg.yolov8_inference:
+            box.append([
+                detection.bbox.center.x, 
+                detection.bbox.center.y, 
+                detection.bbox.size.x, 
+                detection.bbox.size.y
+            ])
+            score.append(detection.score)
+            class_id.append(detection.class_id)
+
+        if not score:
+            return
+        
+        max_index = score.index(max([s for i, s in enumerate(score) if class_id[i] == 0]))
+
+        self.targetCenterPixelXY = np.array([
+            msg.yolov8_inference[max_index].bbox.center.x, 
+            msg.yolov8_inference[max_index].bbox.center.y
+        ])
+        self.targetSizePixelXY = np.array([
+            msg.yolov8_inference[max_index].bbox.size.x, 
+            msg.yolov8_inference[max_index].bbox.size.y
+        ])
+        # self.getLosTruth()
         self.getLosMeasure()
 
-    # def targetPosition_callback(self, msg):
-    #     self.targetPosition = np.array([msg.position.x, msg.position.y, msg.position.z])
+    def targetPositionCallback(self, msg):
+        self.targetPosition = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
+        print(f"{self.targetPosition =}")
     
-    # def uavPosition_callback(self, msg):
-    #     self.uavPosition = np.array([msg.position.x, msg.position.y, msg.position.z])
-    #     self.uavQuaternion =
-    #   self.uavRPY =  quaternion2euler(self.uavQuaternion)
+    def uavPositionCallback(self, msg):
+        self.uavPosition = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
+        print(f"{self.uavPosition =}")
+        self.uavQuaternion = [msg.pose.orientation.w, msg.pose.orientation.x, msg.pose.orientation.y, msg.pose.orientation.z]
+        self.uavRPY =  quaternion2euler(self.uavQuaternion)
         
     def getLosTruth(self):
         relativePosition = self.targetPosition - self.uavPosition
@@ -124,7 +188,7 @@ class MeasurementTestNode(Node):
                                np.arctan(targetPixel[0]/(self.imageSizePixelXY[0]/2) * np.tan(self.cameraFOV[0]/2))])
         # LOSdirectionCameraFRD = np.array([1, np.tan(self.lookAngleFRD[1]), np.tan(self.lookAngleFRD[0])])/np.linalg.norm(np.array([1, np.tan(self.lookAngleFRD[1]), np.tan(self.lookAngleFRD[0])]))
         # LOSdirectionBodyFRD = camera2bodyFRDrotationMatrix(self.cameraPitchRAD) @ LOSdirectionCameraFRD
-        # LOSdirectionNED = frd2nedRotationMatrix(self.uavRPY) @ LOSdirectionBodyFRD
+        # LOSdirectionNED = frd2nedRotationMatrix(rpyENU2NED(self.uavRPY)) @ LOSdirectionBodyFRD
         # LOSdirectionENU = ned2enu(LOSdirectionNED)
         # self.losMeasureENU = np.array([np.arctan2(LOSdirectionENU[2], np.sqrt(LOSdirectionENU[0] ** 2 + LOSdirectionENU[1] ** 2)),
         #                     np.arctan2(LOSdirectionENU[1], LOSdirectionENU[0])])
@@ -148,18 +212,20 @@ class MeasurementTestNode(Node):
             # losTruth = np.array([d['losTruth'] for d in self.data]).T
             # losMeasure = np.array([d['losMeasure'] for d in self.data]).T
             lookAngle = np.array([d['lookAngle'] for d in self.data]).T
-            
+            # losError = losMeasure - losTruth
             # self.losTruth_lines[0].set_data(time_data, np.rad2deg(losTruth[0]))
             # self.losTruth_lines[1].set_data(time_data, np.rad2deg(losTruth[1]))
             # self.losMeasure_lines[0].set_data(time_data, np.rad2deg(losMeasure[0]))
             # self.losMeasure_lines[1].set_data(time_data, np.rad2deg(losMeasure[1]))
+            # self.losError_lines[0].set_data(time_data, np.rad2deg(losError[0]))
+            # self.losError_lines[1].set_data(time_data, np.rad2deg(losError[1]))
             self.lookAngle_lines[0].set_data(time_data, np.rad2deg(lookAngle[0]))
             self.lookAngle_lines[1].set_data(time_data, np.rad2deg(lookAngle[1]))
             
-            self.ax[0].relim()
-            self.ax[0].autoscale_view()
-            self.ax[1].relim()
-            self.ax[1].autoscale_view()
+            for num, direction in enumerate(['elevation angle', 'azimuth angle']):
+                self.ax[num].set_xlim(time.time() - self.startTime - 10.0, time.time() - self.startTime + 10.0)
+                self.ax[num].relim()
+                self.ax[num].autoscale_view()
             self.fig.canvas.draw()
 
 def main(args=None):
@@ -167,7 +233,6 @@ def main(args=None):
     measurementTestNode = MeasurementTestNode()
     spinThread = threading.Thread(target=lambda: rclpy.spin(measurementTestNode))
     spinThread.start()
-
     try:
         measurementTestNode.update_plot(0)
         plt.show()

@@ -21,7 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
                 'yolov8_node = yolov8_main.yolov8_node:main',
-                'measurement_test_node = yolov8_main.measurement_test_node:main' 
+                'measurement_test_node = yolov8_main.detection_subscriber:main' 
         ],
     },
 )
