@@ -26,9 +26,10 @@ class Yolov8Node(Node) :
         super().__init__('yolov8_node')
 
         self._class_to_color = {}
+        self.target_class_id = 0  ## setting the target class id
 
         # parameter default setting
-        self.declare_parameter('weight', '/home/amov/YOLOv8_ROS2/src/yolov8-ros2/weights/best_2.pt')
+        self.declare_parameter('weight', '/home/amov/YOLOv8_ROS2/weights/best.engine')
         self.declare_parameter('device', 'cuda:0')
         self.declare_parameter('conf_threshold', '0.5')
         self.declare_parameter('iou_threshold', '0.7')
@@ -82,6 +83,8 @@ class Yolov8Node(Node) :
             return
         
         for i in range(len(results)) :
+            if int(results.boxes[i].cls) != self.target_class_id:           ## if the class is not the target class, skip it
+                continue
             inference_result =  Yolov8Inference()
 
             if results.boxes :

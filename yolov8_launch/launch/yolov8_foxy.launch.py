@@ -16,7 +16,7 @@ def generate_launch_description() :
     return LaunchDescription([
         DeclareLaunchArgument(
             'weight',
-            default_value='/home/amov/YOLOv8_ROS2/src/yolov8-ros2/weights/best_2.pt',
+            default_value='/home/amov/YOLOv8_ROS2/weights/best.engine',
             description='weight model path or name'
         ),
         DeclareLaunchArgument(
