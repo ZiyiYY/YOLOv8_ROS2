@@ -30,25 +30,44 @@ source ./install/setup.bash
 ### Start the YOLOv8 node
 
 ```bash
+# 默认使用相机模式
 ros2 launch yolov8_launch yolov8_foxy.launch.py
 ```
 
-#### Object detection demo
+### Input source
+
+#### 1. Use camera
 
 ```bash
-ros2 launch yolov8_launch yolov8_foxy.launch.py img_topic:=<camera_image_topic>
+ros2 launch yolov8_launch yolov8_foxy.launch.py input_type:=camera
+
+
 ```
 
-#### Segmentation demo
+#### 2. Use video   
 
 ```bash
-ros2 launch yolov8_launch yolov8_foxy.launch.py weight:=yolov8n-seg.pt img_topic:=<camera_image_topic> 
+ros2 launch yolov8_launch yolov8_foxy.launch.py input_type:=video input_path:=/path/to/your/video.mp4
 ```
 
-#### Parameters
+
+### Use Segmentation model
+
+```bash
+ros2 launch yolov8_launch yolov8_foxy.launch.py weight:=yolov8n-seg.pt
+```
+
+## Parameters
+
+### Configuration parameters
+- **input_type**:（camera, video, image）。默认为`camera`
 - **weight**: YOLOv8 model weight. Default is `yolov8n.pt`
 - **device**: device type (GPU/CUDA/CPU). Default is `cuda:0`
 - **conf_threshold**: NMS confidence threshold. Default is `0.5`
-- **conf_threshold**: NMS IoU threshold. Default is `0.7`
-- **image_reliability**: image reliability QOS for the image topic. Option is 0:system default | 1:Reliable | 2:Best Effort. Default is `2`
-- **img_topic**: camera topic of image. Default is `/camera/rgb/image_raw`
+- **iou_threshold**: NMS IOU threshold. Default is `0.5`
+- **class_names**: Class names file path. Default is `coco.names`
+- **model_type**: YOLOv8 model type (n, s, m, l, x). Default is `n`
+- **segmentation**: Use segmentation model. Default is `False`
+- **segmentation_threshold**: Segmentation threshold. Default is `0.5`
+
+

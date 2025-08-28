@@ -11,7 +11,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools', 'matplotlib'],
+    install_requires=['setuptools'],
     zip_safe=True,
     maintainer='ban2aru',
     maintainer_email='qorskfo1023@hanmail.net',
@@ -20,8 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-                'yolov8_node = yolov8_main.yolov8_node:main',
-                'measurement_test_node = yolov8_main.detection_subscriber:main' 
+                'yolov8_node = yolov8_main.yolov8_node:main'
         ],
     },
 )
